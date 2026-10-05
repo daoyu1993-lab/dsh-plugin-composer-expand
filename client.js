@@ -269,6 +269,97 @@ window.__ModuleLoader__.load({
 		}
 
 		/* ─────────────────────────────────────────────────────────────────────
+		 * The slide.
+		 *
+		 * The card's height is `auto` when collapsed and a measured length when
+		 * expanded, and CSS cannot interpolate `auto` — so this is a FLIP: measure
+		 * the height that is on screen, apply the new layout, then tween between
+		 * the two with the Web Animations API. The tween is `fill: 'forwards'` and
+		 * cancelled the moment it settles, so the stylesheet owns the resting state
+		 * (no inline height is left behind, and a resize mid-flight just re-targets).
+		 *
+		 * The transcript needs no tween of its own. It is given the seat's height
+		 * back as `padding-bottom: var(--dsh-composer-height)`, and that variable is
+		 * written by the shell's own ResizeObserver from `seat.offsetHeight` — so it
+		 * follows the tween on its own, and at both ends of the slide swapping "seat
+		 * in flow" for "seat absolute + equal padding" is a visual no-op.
+		 * ───────────────────────────────────────────────────────────────────── */
+
+		/** Expando holding the in-flight animation, so a fast toggle retargets. */
+		const ANIM_KEY = '__dshComposerExpandAnimation';
+		/** Slide duration and easing: quick out, settled in — 250ms reads as one move. */
+		const SLIDE_MS = 250;
+		const SLIDE_EASING = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
+
+		/**
+		 * Should the slide be skipped?
+		 * @returns whether the user asked for reduced motion.
+		 */
+		function prefersReducedMotion() {
+			return (
+				typeof window.matchMedia === 'function' &&
+				window.matchMedia('(prefers-reduced-motion: reduce)').matches
+			);
+		}
+
+		/**
+		 * Cancel an in-flight slide, leaving the resting state in charge.
+		 * @param card - the composer card.
+		 */
+		function stopSlide(card) {
+			const running = card[ANIM_KEY];
+			if (running === undefined) return;
+			delete card[ANIM_KEY];
+			running.cancel();
+		}
+
+		/**
+		 * Tween one card from the height it has now to the height it just became.
+		 * @param card - the composer card.
+		 * @param from - the height on screen before the change, in px.
+		 * @param to - the height after the change, in px.
+		 * @param onSettled - called once, before the tween's effect is removed.
+		 */
+		function slideCard(card, from, to, onSettled) {
+			if (
+				prefersReducedMotion() ||
+				!(from > 0) ||
+				!(to > 0) ||
+				Math.abs(from - to) < 0.5 ||
+				typeof card.animate !== 'function'
+			) {
+				onSettled();
+				return;
+			}
+
+			let animation;
+			try {
+				animation = card.animate([{ height: `${from}px` }, { height: `${to}px` }], {
+					duration: SLIDE_MS,
+					easing: SLIDE_EASING,
+					fill: 'forwards',
+				});
+			} catch (error) {
+				onSettled();
+				return;
+			}
+
+			card[ANIM_KEY] = animation;
+			const settle = () => {
+				if (card[ANIM_KEY] !== animation) return;
+				delete card[ANIM_KEY];
+				/* Hand the final geometry back to the stylesheet *while the tween still
+				   covers the frame*, so nothing flashes in between. */
+				onSettled();
+				animation.cancel();
+			};
+			animation.addEventListener('finish', settle);
+			animation.addEventListener('cancel', () => {
+				if (card[ANIM_KEY] === animation) delete card[ANIM_KEY];
+			});
+		}
+
+		/* ─────────────────────────────────────────────────────────────────────
 		 * Keydown: Enter becomes a newline, Esc collapses.
 		 * ───────────────────────────────────────────────────────────────────── */
 
@@ -671,6 +762,18 @@ ${CARD} {
   outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: -2px;
 }
+/* 展开/收起时图标是整块换掉的（两个官方图标组件），给它一点入场，
+   让按钮的切换和面板的滑动读起来是同一个动作。 */
+.${BUTTON_CLASS} svg {
+  animation: dsh-composer-expand-icon ${SLIDE_MS}ms ${SLIDE_EASING};
+}
+@keyframes dsh-composer-expand-icon {
+  from { opacity: 0; transform: scale(.72); }
+  to { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .${BUTTON_CLASS} svg { animation: none; }
+}
 /* 写字区右侧留出按钮的位置，正文不会跑到按钮底下。
    官方写字区是 padding:4px 8px 0 14px，这里只改右内边距：
    按钮右缘 + 6px 呼吸位。 */
@@ -827,22 +930,45 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 				() => false,
 			);
 
-			React.useEffect(() => {
+			/* Layout effect, not a passive one: the marker has to be applied and the
+			   slide started *before* the browser paints the new layout, otherwise the
+			   final geometry shows for one frame and the tween looks like a jump. */
+			React.useLayoutEffect(() => {
 				const card = cardRef.current;
 				if (card === null) return undefined;
+
+				/* Read the height that is on screen first. Mid-tween that is the
+				   animated value rather than the resting one, which is exactly what the
+				   next slide has to start from — so a fast toggle retargets smoothly. */
+				const from = card.getBoundingClientRect().height;
+				stopSlide(card);
+
 				if (!expanded) {
-					disarmCard(card);
+					if (!card.hasAttribute(EXPANDED)) {
+						disarmCard(card);
+						return undefined;
+					}
+					/* Keep the marker alive while the card slides back down: the seat stays
+					   out of flow, so the transcript is not reflowed mid-flight. Measure
+					   the natural height with the marker off, then put it back before the
+					   browser can paint the intermediate state. */
+					card.removeAttribute(EXPANDED);
+					const natural = card.offsetHeight;
+					card.setAttribute(EXPANDED, '');
+					slideCard(card, from, natural, () => disarmCard(card));
 					return undefined;
 				}
 
 				card[SESSION_KEY] = sessionId;
 				card.setAttribute(EXPANDED, '');
 				syncHeight(card);
-
-				const scroll = card.closest(SCROLL);
+				const height = card.offsetHeight;
 				const observer = new ResizeObserver(() => syncHeight(card));
+				const scroll = card.closest(SCROLL);
 				if (scroll !== null) observer.observe(scroll);
 				card[RESIZE_KEY] = observer;
+
+				slideCard(card, from, height, () => {});
 
 				return () => {
 					observer.disconnect();
@@ -859,6 +985,7 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 				() => () => {
 					const card = cardRef.current;
 					if (card === null) return;
+					stopSlide(card);
 					disarmCard(card);
 				},
 				[],
