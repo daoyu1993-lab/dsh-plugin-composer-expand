@@ -1,0 +1,29 @@
+{
+  "name": "dsh-plugin-composer-expand",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Add an expand button to the DSH composer: one click grows the input into an immersive, overlay writing surface where Enter makes a newline and only the send button submits.",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT"
+}

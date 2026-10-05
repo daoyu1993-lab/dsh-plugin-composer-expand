@@ -1,0 +1,6 @@
+node_modules/
+.DS_Store
+*.log
+
+# 真机验证截图只留在本机，不随仓库分发（含本机会话列表与对话内容）
+preview/

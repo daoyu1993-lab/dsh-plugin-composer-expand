@@ -1,0 +1,9 @@
+# Mount this package as a profile bundle layer.
+#
+# `dsh plugin add <path>` appends this package to `dsh.profile.bundles` when it
+# sees `dsh.bundle.patch` in package.json, and the profile boot then merges the
+# `insert` below. Adding or removing the bundle itself needs a restart; editing
+# the profile's own cordis.patch.yml is picked up live (dsh-hmr watches it).
+- insert:
+    - id: composer-expand
+      name: 'dsh-plugin-composer-expand'
