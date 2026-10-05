@@ -538,23 +538,39 @@ window.__ModuleLoader__.load({
 		const OPEN_SEAT = `${SEAT}:has(${CARD}[${EXPANDED}])`;
 
 		const CSS = `
-/* ── ① 展开按钮：输入框文本区右上角，常驻 ────────────────────────────────────
+/* ── ① 展开按钮：与第一行文字垂直居中，上/右留白相等 ──────────────────────────
    槽位 \`conversation.input.overlay\` 渲染在卡片自己的 .overlayAnchor 里
    （position:absolute; inset:0 0 auto; height:0）—— 那个盒子横跨卡片上沿、
-   高度为 0，所以绝对定位的按钮天然落在卡片右上角，两个轴都以卡片为基准。 */
+   高度为 0，所以绝对定位的按钮天然落在卡片右上角，两个轴都以卡片为基准。
+
+   纵轴让按钮中心落在**第一行文字**（也就是 placeholder）的中心上。那一行相对
+   卡片边框盒的中心是：
+     卡片 padding-top 8
+     + 写字区 padding-top 4
+     + 行高 / 2          ← 行高 = calc(24px + var(--dsh-content-font-delta))
+     = 24px + delta/2
+   按钮高 26px，所以 top = 24 + delta/2 − 13 = 11px + delta/2。
+   这个表达式跟着主题字号走：默认 14px 字号时 delta=0 → 11px；
+   本 profile 的 15px 字号时 delta=1px → 11.5px。 */
+${CARD} {
+  --dsh-composer-expand-size: 26px;
+  --dsh-composer-expand-inset: calc(11px + var(--dsh-content-font-delta, 0px) / 2);
+}
 .${BUTTON_CLASS} {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: var(--dsh-composer-expand-inset);
+  right: var(--dsh-composer-expand-inset);
   z-index: 3;
   box-sizing: border-box;
-  width: 26px;
-  height: 26px;
+  width: var(--dsh-composer-expand-size);
+  height: var(--dsh-composer-expand-size);
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: var(--dsw-radius-sm, 6px);
+  /* 圆形底：hover 时落下的是一个正圆 */
+  border-radius: 999px;
+  corner-shape: round;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
@@ -569,9 +585,10 @@ window.__ModuleLoader__.load({
   outline-offset: -2px;
 }
 /* 写字区右侧留出按钮的位置，正文不会跑到按钮底下。
-   官方写字区是 padding:4px 8px 0 14px，这里只改右内边距。 */
+   官方写字区是 padding:4px 8px 0 14px，这里只改右内边距：
+   按钮右缘 + 6px 呼吸位。 */
 ${CARD} ${INPUT} {
-  padding-right: 38px;
+  padding-right: calc(var(--dsh-composer-expand-inset) + var(--dsh-composer-expand-size) + 6px);
 }
 
 /* ── ② 覆盖态：座位脱离文档流，浮在消息区之上 ────────────────────────────────

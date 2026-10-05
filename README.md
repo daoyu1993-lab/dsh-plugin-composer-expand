@@ -16,7 +16,8 @@ DSH 的输入卡片默认只有一行高（写字区 36px，官方上限定死 3
 
 | | 行为 |
 |---|---|
-| 入口 | 输入卡片右上角常驻的图标按钮（官方 `IconChevronsUpDownOutlineRegular` / `IconChevronDownOutlineRegular`），hover 出底色 |
+| 入口 | 输入卡片右上角常驻的图标按钮（官方 `IconChevronsUpDownOutlineRegular` / `IconChevronDownOutlineRegular`），hover 落一个**圆形底** |
+| 按钮落位 | 按钮中心与**第一行文字**（也就是 placeholder）垂直居中；上、右留白取**同一个值**，左上角两边的呼吸位相等 |
 | 展开高度 | 对话区高度的 **65%**（窗口缩放实时跟随），下限 200px，上限为对话区高度 − 48px |
 | 覆盖方式 | 座位绝对定位、贴底；消息区**不重排**（不压缩、不推挤、滚动位置由 CSS 完整保住；实测收放完全可逆） |
 | 展开态 Enter | **换行**（软换行，与官方 Shift+Enter 完全同一条路径） |
@@ -88,6 +89,39 @@ shell 有一个 ResizeObserver 把 `seat.offsetHeight` 写成滚动容器上的 
 样式表里的 `65vh` 只是首次测量前的兜底。上限夹取是必须的：不加夹取，小窗口下卡片顶边会跑到
 对话区上方、被 `.root[data-phase=active]{overflow:hidden}` 裁掉。
 
+## 按钮为什么落在这个位置
+
+按钮要和**第一行文字**（placeholder）垂直居中，并且上、右留白相等。第一行文字相对卡片边框盒的
+中心是：
+
+```
+卡片 padding-top  8
++ 写字区 padding-top  4
++ 行高 / 2            ← 行高 = calc(24px + var(--dsh-content-font-delta))
+= 24px + delta / 2
+```
+
+按钮高 26px，所以 `top = 24 + delta/2 − 13 = 11px + delta/2`；`right` 取同一个值，
+两边自然相等：
+
+```css
+[data-composer-card] {
+  --dsh-composer-expand-size: 26px;
+  --dsh-composer-expand-inset: calc(11px + var(--dsh-content-font-delta, 0px) / 2);
+}
+```
+
+`--dsh-content-font-delta` 是官方自己的变量（定义在 `body` 上，等于
+`--dsh-content-font-size − 14px`），所以这个表达式**跟着主题字号自适配**：
+默认 14px 字号时是 11px，本机 profile 的 15px 字号（行高 25px）时是 11.5px ——
+实测两档下按钮中心与第一行文字中心的偏差都是 **0.00px**。
+写字区的右内边距也由它推导（`inset + size + 6px`），所以按钮一动，正文避让跟着动。
+
+hover 的底改成圆形：按钮 26×26，`border-radius: 999px` 即正圆。
+
+> 注意：这条对齐锚定在**卡片上沿**。如果卡片里出现附件（附件行在写字区**上方**，
+> 会把第一行文字往下推），对齐会偏；展平时（无附件）是准的。
+
 ## 选择器为什么这么写
 
 DSH 的类名全是 CSS-module 哈希（`yhfFVG_card`、`ST7X_W_composerSeat`），每次构建都变，不能用。
@@ -123,8 +157,8 @@ DSH 的类名全是 CSS-module 哈希（`yhfFVG_card`、`ST7X_W_composerSeat`）
   这是本插件目前唯一一处「不重排」没有做到零像素的地方，约两行文字，且完全可逆。
 - **展开时卡片右上角的按钮不变成"关闭"以外的东西**（没有点击外部收起）—— 按你选的三种收起方式实现。
 - **记忆不持久化**：刷新页面或重启 App 后回到默认高度（按你选的"内存记"）。
-- **写字区右侧常驻 38px 内边距**（即使没展开），保证正文不会钻到按钮底下。这会让首行的折行点
-  比官方左移约 30px。
+- **写字区右侧常驻一条内边距**（即使没展开），保证正文不会钻到按钮底下。它由按钮的位置推导：
+  `按钮右内距 + 按钮宽 + 6px`，本 profile 下是 43.5px。这会让首行的折行点比官方左移约 35px。
 - 只改视觉层与键盘语义：不接管官方组件、不注册 chain 座位、不读别的插件 DOM。
 
 ## 安装
