@@ -2,7 +2,7 @@
  * dsh-plugin-composer-expand — browser half.
  *
  * An expand button in the top-right corner of the composer card. One click turns
- * the composer into an immersive writing surface: the card grows to about 65% of
+ * the composer into an immersive writing surface: the card grows to half of
  * the conversation area, floats OVER the transcript (the transcript is not
  * reflowed and not scrolled), and plain Enter makes a newline instead of sending.
  * Collapse with the same button, with Esc, or by sending.
@@ -105,7 +105,7 @@ window.__ModuleLoader__.load({
 		const GUTTER_VAR = '--dsh-composer-expand-gutter';
 
 		/** Expanded card height, as a fraction of the conversation area. */
-		const HEIGHT_RATIO = 0.65;
+		const HEIGHT_RATIO = 0.5;
 		/** Never shrink below this, never reach the very top of the transcript. */
 		const MIN_HEIGHT = 200;
 		const TOP_CLEARANCE = 48;
@@ -214,7 +214,7 @@ window.__ModuleLoader__.load({
 		 * A percentage would need a definite parent height, and the seat is
 		 * absolutely positioned with `height: auto` — so the number is measured
 		 * here and handed to the stylesheet as a custom property. The fallback in
-		 * the stylesheet (`65vh`) only applies for the sliver of time before the
+		 * the stylesheet (`50vh`) only applies for the sliver of time before the
 		 * first measurement lands.
 		 * @param card - the expanded composer card.
 		 */
@@ -833,11 +833,11 @@ ${CONTENT}[data-content-phase="hero"]:has(${CARD}[${EXPANDED}]) ${SEAT} :has(${C
 }
 
 /* ── ⑤ 卡片长高：写字区吃掉整张卡片，内部滚动 ────────────────────────────────
-   高度由 JS 量出对话区高度后写成自定义属性（65%）；\`65vh\` 只是首次测量前的
+   高度由 JS 量出对话区高度后写成自定义属性（50%）；\`50vh\` 只是首次测量前的
    兜底。写字区官方上限定死 336px（--dsh-composer-text-max-height），这里不改那个
    变量（审批面板也用它）而只解除写字区自己的上限，并让它 flex:1。 */
 ${CARD}[${EXPANDED}] {
-  height: var(${HEIGHT_VAR}, 65vh);
+  height: var(${HEIGHT_VAR}, 50vh);
 }
 ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
   flex: 1 1 auto;
