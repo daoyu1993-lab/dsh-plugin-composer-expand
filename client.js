@@ -305,6 +305,11 @@ window.__ModuleLoader__.load({
 		 * @returns whether a newline was inserted.
 		 */
 		function insertNewline(surface) {
+			/* Re-entrancy: the replayed keydown travels through `document` capture
+			   again, and `onKeyDownCapture` sees it — but a shifted Enter returns
+			   there at the `event.shiftKey` test before any interception happens, so
+			   the replay cannot recurse. (This is also why the handlers do not need
+			   an `isTrusted` gate, which would make them untestable.) */
 			const editor = surface.__lexicalEditor;
 			if (editor !== undefined && editor !== null && editor._commands instanceof Map) {
 				for (const command of editor._commands.keys()) {
@@ -351,13 +356,57 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Send happened (or was clicked at): grow back down.
+		 * Grow one composer back down.
+		 *
+		 * The card is disarmed first so the panel is back to the shipped geometry
+		 * on this frame — the DOM marker is what the stylesheet and the other DOM
+		 * handlers read — and React's state follows so the button re-renders as
+		 * "expand" again.
 		 * @param card - the expanded composer card.
 		 */
-		function collapseAfterSend(card) {
+		function collapseCard(card) {
 			const sessionId = card[SESSION_KEY];
-			if (sessionId === undefined) return;
+			disarmCard(card);
+			if (sessionId === undefined) {
+				/* No owner recorded (should not happen): leave the immersive state
+				   entirely rather than doing nothing. */
+				collapseAll();
+				return;
+			}
 			setExpanded(sessionId, false);
+		}
+
+		/**
+		 * The expanded composer that is actually on screen.
+		 *
+		 * The conversation view renders only the active tab, so at most one
+		 * composer is in the document at a time; the rect check is what keeps a
+		 * hidden one out of the way.
+		 * @returns the visible expanded card, or null.
+		 */
+		function visibleExpandedCard() {
+			for (const card of document.querySelectorAll(`${CARD}[${EXPANDED}]`)) {
+				if (!(card instanceof Element)) continue;
+				if (card.getClientRects().length === 0) continue;
+				return card;
+			}
+			return null;
+		}
+
+		/**
+		 * Is the keyboard currently owned by some other text surface?
+		 *
+		 * A terminal, a search box or any other editable must keep its own Escape.
+		 * The composer itself never counts.
+		 * @param node - `document.activeElement`.
+		 * @returns whether Escape belongs to somebody else.
+		 */
+		function ownsAnotherEditor(node) {
+			if (node === null || node === document.body || node === document.documentElement) return false;
+			if (node.closest(CARD) !== null) return false;
+			const tag = node.tagName;
+			if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+			return node.isContentEditable === true;
 		}
 
 		/**
@@ -389,9 +438,6 @@ window.__ModuleLoader__.load({
 		 * @param event - the keydown.
 		 */
 		function onKeyDownCapture(event) {
-			/* Our own replayed newline propagates through document on the way down;
-			   it must pass straight through. Real user input is always trusted. */
-			if (event.isTrusted === false) return;
 			if (event.key !== 'Enter') return;
 
 			const card = cardOf(event.target);
@@ -408,7 +454,7 @@ window.__ModuleLoader__.load({
 			if (event.altKey || event.getModifierState?.('AltGraph') === true) return;
 			if (event.metaKey || event.ctrlKey) {
 				const primary = primaryButtonOf(card);
-				if (primary !== null && primary.disabled === false) collapseAfterSend(card);
+				if (primary !== null && primary.disabled === false) collapseCard(card);
 				return;
 			}
 
@@ -480,26 +526,68 @@ window.__ModuleLoader__.load({
 		 * @param event - the keydown.
 		 */
 		function onKeyDownBubble(event) {
-			if (event.isTrusted === false) return;
 			if (event.key !== 'Escape') return;
 			if (event.defaultPrevented) return;
-			if (expandedSessions.size === 0) return;
+			/* The rendered marker is the truth for the DOM handlers; the module's
+			   ledger is only what the React side renders from. */
+			if (document.querySelector(`${CARD}[${EXPANDED}]`) === null) return;
 
 			const target = event.target instanceof Element ? event.target : null;
 			const active = document.activeElement instanceof Element ? document.activeElement : null;
-			const card = [target, active]
+
+			/* Prefer the composer the keyboard is actually in, but fall back to the
+			   expanded composer that is on screen: once the pointer has been
+			   anywhere else (the transcript, the sidebar) the focus is outside the
+			   card, and Escape still has to leave the immersive state. */
+			const focusedCard = [target, active]
 				.map((node) => (node === null ? null : node.closest(CARD)))
 				.find((candidate) => candidate !== null && candidate.hasAttribute(EXPANDED));
-			if (card === undefined) return;
+			const card = focusedCard ?? visibleExpandedCard();
+			if (card === null || card === undefined) return;
 
 			/* An IME candidate window owns Escape: that press cancels the candidate
 			   and must not also tear the composer down. Same guard as Enter. */
 			if (isComposingEvent(event, card)) return;
 
-			/* A popup menu owns Escape too (the shipped `arbitrate("escape")`). */
+			/* A popup menu or a modal owns Escape (the shipped
+			   `arbitrate("escape")`; the official modal set is
+			   `[role="dialog"][aria-modal="true"], [role="menu"]`). */
 			if (hasVisiblePopup()) return;
 
-			collapseAll();
+			/* Some other text surface owns the keyboard — a terminal, a search
+			   box. Only exempted when the focus really is outside the composer. */
+			if (focusedCard === undefined && ownsAnotherEditor(active)) return;
+
+			collapseCard(card);
+		}
+
+		/* ─────────────────────────────────────────────────────────────────────
+		 * Wheel: inside the expanded panel, scrolling must stay inside it.
+		 * ───────────────────────────────────────────────────────────────────── */
+
+		/**
+		 * Capture-phase wheel.
+		 *
+		 * The shipped `installDraftWheel` listens on the draft's own scrollport and
+		 * — by design — hands the wheel over to the conversation scrollport once
+		 * the draft hits an edge (`host.scrollTop += e.deltaY`). In the collapsed
+		 * composer that is a feature. In the expanded panel the transcript sits
+		 * behind the card and is not what the user is looking at, so it reads as
+		 * "scrolling the text also scrolls the conversation".
+		 *
+		 * Claiming the event on the way down stops it before it reaches that
+		 * listener. Native scrolling is a *default action*, not a listener, so the
+		 * panel keeps scrolling normally; only the hand-off disappears.
+		 * @param event - the wheel event.
+		 */
+		function onWheelCapture(event) {
+			const node = event.target;
+			if (!(node instanceof Element)) return;
+			const surface = node.closest(INPUT_SCROLL);
+			if (surface === null) return;
+			const card = surface.closest(CARD);
+			if (card === null || !card.hasAttribute(EXPANDED)) return;
+			event.stopPropagation();
 		}
 
 		/* ─────────────────────────────────────────────────────────────────────
@@ -514,7 +602,6 @@ window.__ModuleLoader__.load({
 		 * @param event - the click.
 		 */
 		function onClickCapture(event) {
-			if (event.isTrusted === false) return;
 			const node = event.target;
 			if (!(node instanceof Element)) return;
 			const button = node.closest('button');
@@ -522,7 +609,7 @@ window.__ModuleLoader__.load({
 			const card = button.closest(CARD);
 			if (card === null || !card.hasAttribute(EXPANDED)) return;
 			if (primaryButtonOf(card) !== button) return;
-			collapseAfterSend(card);
+			collapseCard(card);
 		}
 
 		/* ─────────────────────────────────────────────────────────────────────
@@ -650,6 +737,10 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
+  /* 面板里滚到底就停住，不要把滚动接力给后面的对话列表。
+     官方 JS（installDraftWheel）在草稿滚动区触边时会把滚轮转发给对话滚动容器，
+     那一步由 onWheelCapture 拦掉；这条是浏览器原生滚动链的兜底。 */
+  overscroll-behavior: contain;
 }
 `;
 
@@ -842,6 +933,7 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 					document.addEventListener('compositionend', onCompositionEnd, true);
 					document.addEventListener('keydown', onKeyDownBubble, false);
 					document.addEventListener('click', onClickCapture, true);
+					document.addEventListener('wheel', onWheelCapture, { capture: true, passive: true });
 					window.addEventListener('resize', syncAllHeights);
 
 					return () => {
@@ -849,6 +941,7 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 						document.removeEventListener('compositionend', onCompositionEnd, true);
 						document.removeEventListener('keydown', onKeyDownBubble, false);
 						document.removeEventListener('click', onClickCapture, true);
+						document.removeEventListener('wheel', onWheelCapture, true);
 						window.removeEventListener('resize', syncAllHeights);
 						for (const card of document.querySelectorAll(`${CARD}[${EXPANDED}]`)) {
 							disarmCard(card);
