@@ -447,21 +447,24 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
-		 * Grow one composer back down.
+		 * Ask one composer to grow back down.
 		 *
-		 * The card is disarmed first so the panel is back to the shipped geometry
-		 * on this frame — the DOM marker is what the stylesheet and the other DOM
-		 * handlers read — and React's state follows so the button re-renders as
-		 * "expand" again.
+		 * This only flips the ledger — it must NOT touch the card's marker. The
+		 * marker is what the layout effect reads to tell "was expanded" from "never
+		 * was", so removing it here makes the effect take its nothing-to-do branch
+		 * and the slide never starts (that was a real regression: Esc collapsed
+		 * instantly while the button animated). The effect still applies the marker
+		 * before the browser paints, so the collapse is just as immediate.
 		 * @param card - the expanded composer card.
 		 */
 		function collapseCard(card) {
 			const sessionId = card[SESSION_KEY];
-			disarmCard(card);
 			if (sessionId === undefined) {
 				/* No owner recorded (should not happen): leave the immersive state
-				   entirely rather than doing nothing. */
+				   entirely — and here the card really does have to be disarmed by
+				   hand, because no button is left to re-render it. */
 				collapseAll();
+				disarmCard(card);
 				return;
 			}
 			setExpanded(sessionId, false);
