@@ -16,7 +16,7 @@ DSH 的输入卡片默认只有一行高（写字区 36px，官方上限定死 3
 
 | | 行为 |
 |---|---|
-| 入口 | 输入卡片右上角常驻的图标按钮（官方 `IconChevronsUpDownOutlineRegular` / `IconChevronDownOutlineRegular`），hover 落一个**圆形底** |
+| 入口 | 输入卡片右上角常驻的图标按钮（展开态 `IconFullscreenOutlineRegular`，收起态 `IconChevronDownOutlineRegular`），hover 落一个**圆形底** |
 | 按钮落位 | 按钮中心与**第一行文字**（也就是 placeholder）垂直居中；上、右留白取**同一个值**，左上角两边的呼吸位相等 |
 | 展开高度 | 对话区高度的 **65%**（窗口缩放实时跟随），下限 200px，上限为对话区高度 − 48px |
 | 展开 / 收起动画 | 卡片高度做 **250ms** 补间（`cubic-bezier(0.22, 0.61, 0.36, 1)`，快出缓入）；动画期间座位**一直保持脱离文档流**，所以消息区全程不动；系统开了"减弱动态效果"时自动跳过，不补间 |

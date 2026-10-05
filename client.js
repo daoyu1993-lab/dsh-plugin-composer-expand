@@ -858,7 +858,7 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 		let icons = null;
 		try {
 			const primitives = require('@deepseek-ai/dsh-client-ui-primitives');
-			const expand = primitives.IconChevronsUpDownOutlineRegular;
+			const expand = primitives.IconFullscreenOutlineRegular;
 			const collapse = primitives.IconChevronDownOutlineRegular;
 			if (typeof expand === 'function' && typeof collapse === 'function') icons = { expand, collapse };
 		} catch (error) {
@@ -867,16 +867,49 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 		}
 
 		/**
-		 * Inline fallback artwork, drawn to match the shipped 16x16 outline icons
-		 * (stroke `currentColor`, 1px, round caps) so the button does not change
-		 * shape if the icon module is unreachable.
-		 * @param props - `up`/`down` arms to draw.
+		 * Inline fallback artwork, traced from the shipped `IconFullscreenOutline`
+		 * and `IconChevronDownOutline` geometries so the button keeps its shape if
+		 * the icon module is unreachable.
+		 *
+		 * Both glyphs come out of the same 16x16 grid as the originals: the
+		 * fullscreen glyph is two filled corner brackets plus two 1px diagonals,
+		 * each path carrying its own `fill`/`stroke` (the shipped artwork leaves
+		 * `stroke` off the wrapper, so the brackets stay unstroked).
+		 * @param kind - `'expand'` or `'collapse'`.
 		 * @returns the svg element.
 		 */
-		function fallbackIcon({ up, down }) {
-			const arms = [];
-			if (up) arms.push(React.createElement('path', { key: 'up', d: 'm5.1 6 2.9-2.9L10.9 6' }));
-			if (down) arms.push(React.createElement('path', { key: 'down', d: 'm5.1 10 2.9 2.9 2.9-2.9' }));
+		function fallbackIcon(kind) {
+			const paths =
+				kind === 'collapse'
+					? [
+							React.createElement('path', {
+								key: 'down',
+								d: 'm5.1 10 2.9 2.9 2.9-2.9',
+								stroke: 'currentColor',
+								strokeWidth: 1,
+								strokeLinecap: 'round',
+								strokeLinejoin: 'round',
+							}),
+						]
+					: [
+							React.createElement('path', {
+								key: 'corners',
+								fill: 'currentColor',
+								d: 'M2.33154 9.40576V13.1685C2.3318 13.4444 2.55556 13.6685 2.83154 13.6685H6.49463V14.6685H2.83154C2.00328 14.6685 1.3318 13.9967 1.33154 13.1685V9.40576H2.33154ZM13.1685 1.33154C13.9964 1.33199 14.6683 2.00352 14.6685 2.83154V6.40576H13.6685V2.83154C13.6683 2.5558 13.4441 2.33199 13.1685 2.33154H9.49463V1.33154H13.1685Z',
+							}),
+							React.createElement('path', {
+								key: 'tr',
+								d: 'M9.4292 6.57077L13.914 2.08594',
+								stroke: 'currentColor',
+								strokeWidth: 1,
+							}),
+							React.createElement('path', {
+								key: 'bl',
+								d: 'M6.57077 9.4292L2.08594 13.914',
+								stroke: 'currentColor',
+								strokeWidth: 1,
+							}),
+						];
 			return React.createElement(
 				'svg',
 				{
@@ -884,13 +917,9 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 					height: 16,
 					viewBox: '0 0 16 16',
 					fill: 'none',
-					stroke: 'currentColor',
-					strokeWidth: 1,
-					strokeLinecap: 'round',
-					strokeLinejoin: 'round',
 					'aria-hidden': true,
 				},
-				arms,
+				paths,
 			);
 		}
 
@@ -1007,9 +1036,7 @@ ${CARD}[${EXPANDED}] ${INPUT_SCROLL} {
 						: 'Expand the input';
 			const icon =
 				icons === null
-					? expanded
-						? fallbackIcon({ down: true })
-						: fallbackIcon({ up: true, down: true })
+					? fallbackIcon(expanded ? 'collapse' : 'expand')
 					: React.createElement(expanded ? icons.collapse : icons.expand, { size: 16 });
 
 			return React.createElement(
